@@ -81,6 +81,44 @@ These functions are the boundary between the engine and the app. Changing a sign
 
 **Shared data objects to define:** `LeagueSettings`, `Player`, `DraftState`, `Roster`. Until the engine is ready, the app uses mock versions that return the same shapes.
 
+## Pickup analyzer design (after draft)
+
+Pickups combine many factors. Measurable factors are scored by the engine; factors that need reading and judgment are handled by the Claude agent.
+
+**Engine factors (Mahir)**
+
+| Factor | What it captures | Data source |
+| --- | --- | --- |
+| Recent production | Fantasy points per game over last 7 and 14 days vs season average | `nba_api` game logs |
+| Minutes and usage trend | Whether a player's role is growing | `nba_api` |
+| Schedule | Games this week and over the next few weeks | `nba_api` schedule |
+| Availability history | Share of games played over the last 2–3 seasons, used as an injury-risk discount | `nba_api` |
+| Teammate dependency | Minutes and fantasy points with vs without a key teammate playing | `nba_api` game logs |
+| Roster fit | Net gain vs the worst player on our roster | Our roster + engine values |
+| Rostered % trend | Whether other managers are adding him | Yahoo API |
+
+**Agent factors (Claude API with web search)**
+
+- Current injury status and return timelines
+- Teammate injuries that open up minutes
+- Teammates returning from injury, which can shrink a pickup's role
+- Injured players close to returning, as IL stash candidates (we have 2 IL slots)
+- Role changes: trades, lineup changes, coach comments
+- Rest patterns such as sitting out back-to-backs
+
+**Flow**
+
+1. Engine scores every free agent: projected points over the next N games, discounted by injury risk, minus the player we'd drop.
+2. Agent takes the top 10–15 candidates and searches news for each player and their team's injuries.
+3. Agent flags what the numbers miss (for example, a starter returning soon) and explains final picks, stating its confidence when return timelines are vague.
+
+**Notes**
+
+- Factor weights come from testing against last season's data, not guesses. Short hot streaks often fade; minutes trends usually matter more.
+- Teammate dependency needs enough games in each situation to be reliable; very small splits are mostly noise.
+- The same checks apply to our own roster, to flag players whose role depends on an injured starter.
+- Availability history is also useful before Oct 1, to discount injury-prone players in draft rankings.
+  
 ## Ownership and workflow
 
 | Area | Owner |
