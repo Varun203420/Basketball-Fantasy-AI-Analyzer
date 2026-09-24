@@ -6,11 +6,11 @@ Living version (edit and comment here, then sync this file): https://claude.ai/c
 
 We're building an AI assistant that helps fantasy basketball managers draft, pick up players, and evaluate trades. A deterministic stats engine does the math; an LLM agent reasons over its output and explains recommendations in plain language.
 
-Primary user: us and our league-mates. Target: usable for 2026–27 season drafts in October, with pickups and trades added during the season.
+Primary user: us and our league-mates. Target: usable for our Oct 1 draft, with pickups and trades added during the season.
 
 ## Goals and scope
 
-The MVP is a draft assistant for one league format, usable in a real draft this October.
+The MVP is a draft assistant for our league, usable in the real draft on Oct 1.
 
 **MVP (in scope)**
 
@@ -36,11 +36,12 @@ The MVP is a draft assistant for one league format, usable in a real draft this 
 
 - [x] Platform: Yahoo
 - [x] Scoring format: points
-- [ ] Point values per stat: Yahoo defaults or our league's custom settings?
-- [ ] Roster size, positions, number of teams, and any weekly games or transaction limits
-- [ ] Data source: `nba_api`, Basketball Reference, or both
-- [ ] Which LLM provider and model for the agent layer
-- [ ] Frontend: simple web app (e.g. Streamlit or React) vs CLI for the first draft
+- [x] Point values per stat: Yahoo defaults
+- [x] League: 10 teams, 13 roster spots + 2 IL, 3 flexible spots (confirm: bench or UTIL?)
+- [x] Draft: Oct 1, 8pm PT
+- [ ] Data source: `nba_api` (default unless we pick otherwise)
+- [x] LLM for the agent layer: Claude API
+- [x] Frontend: Streamlit for the October draft, React later
 
 ## Architecture
 
@@ -57,7 +58,7 @@ flowchart LR
     F --> H[Chat, pickups, trades]
 ```
 
-The agent calls engine functions as tools and loops until it can answer. During a live draft, the engine picks and the LLM only writes the explanation.
+The agent calls engine functions as tools and loops until it can answer. During a live draft, the engine picks and the LLM only writes the explanation. For the MVP, Streamlit calls the engine directly; the FastAPI layer comes after the draft.
 
 **Repo layout**
 
@@ -84,9 +85,9 @@ These functions are the boundary between the engine and the app. Changing a sign
 
 | Area | Owner |
 | --- | --- |
-| Data pipeline, database | Collaborator (data science) |
-| Valuation model: points projections, value over replacement | Collaborator |
-| Backtesting draft recommendations | Collaborator |
+| Data pipeline, database | Mahir Krishnan (data science) |
+| Valuation model: points projections, value over replacement | Mahir |
+| Backtesting draft recommendations | Mahir |
 | AI agent: tools, prompts, reasoning | Varun |
 | UI and UX (draft board, chat) | Varun |
 | FastAPI backend, league integration | Varun |
@@ -102,15 +103,16 @@ These functions are the boundary between the engine and the app. Changing a sign
 
 ## Milestones
 
-The draft assistant needs to work before our league's draft date (open question: when is it?).
+The draft is Oct 1 at 8pm PT, eight days out, so the MVP is a one-week sprint. The rankings file is the fallback: if the app isn't ready, it still works as a cheat sheet.
 
-| Week | Collaborator | Varun |
+| Dates | Mahir | Varun |
 | --- | --- | --- |
-| 1 | Data pipeline pulls last season + current rosters | Repo, `CLAUDE.md`, mock engine, API skeleton |
-| 2 | Points valuation model, value over replacement | Draft board UI against mock data |
-| 3 | `recommend_pick` + backtest on last season | LLM explanation layer, wire to real engine |
-| 4 | Fixes from a mock draft | Mock draft run end to end, polish |
-| After draft | Minutes-trend model, `find_pickups` | Pickup agent, news tool |
+| Sep 24–25 | Pull last season's stats with `nba_api`; compute Yahoo fantasy points per game and games played | Streamlit draft board on mock data: mark players drafted, track our roster |
+| Sep 26–27 | Projections for this season + value over replacement for 10 teams; export rankings CSV | Load real rankings; best-available view filtered by open roster slots |
+| Sep 28–29 | Sanity-check rankings (rookies, injuries, role changes) | Claude API explanation for top picks (stretch if time is short) |
+| Sep 30 | Fixes from a Yahoo mock draft run together | Fixes from the mock draft; freeze the app |
+| Oct 1 | Draft night | Draft night |
+| After draft | Backtesting, minutes-trend model, `find_pickups` | FastAPI backend, pickup agent, news tool |
 
 ## Decision log
 
@@ -121,3 +123,8 @@ The draft assistant needs to work before our league's draft date (open question:
 | Build the draft assistant first | Draft season is October; pickups and trades reuse the same engine |
 | Repo is the source of truth, with `CLAUDE.md` | Keeps both of our Claude sessions on the same page |
 | Start with Yahoo points leagues | Most relevant format for us now; category leagues and other platforms come later |
+| Yahoo default point values | Matches our league's scoring |
+| Claude API for the agent layer | Chosen by the team |
+| Streamlit for the MVP, React later | Fastest path to a working draft board, all Python; logic stays in the engine and API so the frontend can be swapped |
+| One-week sprint to the Oct 1 draft; backtesting moves after | Draft is eight days away; the four-week plan doesn't fit |
+| Streamlit imports engine functions directly for the MVP; FastAPI after the draft | Saves setup time; the contract functions stay the same, so adding the API later is easy |
