@@ -73,8 +73,8 @@ These functions are the boundary between the engine and the app. Changing a sign
 
 | Function | Input | Returns | MVP? |
 | --- | --- | --- | --- |
-| `get_player_values` | league settings (point values per stat) | ranked players with projected fantasy points per game and value over replacement | Yes |
-| `recommend_pick` | draft state (players taken), our roster, league settings | top N picks with value and roster-fit reasons (positions, games played) | Yes |
+| `get_player_values` | game logs, league settings, seasons, optional positions and overrides | ranked players with projected per-game stats, games, category z-scores or fantasy points, and value over replacement | Built |
+| `recommend_pick` | player values, draft state (picks in order, our slot), league settings | top N picks with score, reasons, and a likely-gone flag | Built |
 | `get_player_profile` | player id | season and recent stats, minutes trend, injury status | Yes |
 | `find_pickups` | our roster, free agents, week | ranked pickups with reasons (need fit, minutes trend, games this week) | No |
 | `evaluate_trade` | players out, players in, our roster | projected rest-of-season fantasy points before vs after | No |
@@ -166,3 +166,7 @@ The draft is Oct 1 at 8pm PT, eight days out, so the MVP is a one-week sprint. T
 | Streamlit for the MVP, React later | Fastest path to a working draft board, all Python; logic stays in the engine and API so the frontend can be swapped |
 | One-week sprint to the Oct 1 draft; backtesting moves after | Draft is eight days away; the four-week plan doesn't fit |
 | Streamlit imports engine functions directly for the MVP; FastAPI after the draft | Saves setup time; the contract functions stay the same, so adding the API later is easy |
+| Use the tool in a second, experimental league (draft Sun Oct 18); keep our homegrown league tool-free | Lets us experiment with real stakes and compare against our own league |
+| Engine supports categories and points; 9-cat is the default placeholder | The experiment league's format wasn't fixed; one setting switches formats |
+| Category values: per-game z-scores vs the draftable pool, FG%/FT% volume-weighted, value scaled by projected games | Standard approach; missing games costs value |
+| Recommendations add a weak-category bonus and a bench-only penalty on top of value | Keeps the pick deterministic while adapting to our roster |

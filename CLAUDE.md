@@ -8,17 +8,16 @@ An AI assistant for fantasy basketball: draft help first, then waiver pickups an
 A deterministic stats engine does all the math. An LLM (Claude API) explains recommendations in
 plain language. The LLM never computes player values itself.
 
-**League:** Yahoo, points league, Yahoo default point values. 10 teams, 13 roster spots + 2 IL.
-**Deadline:** our draft is Oct 1, 2026 at 8pm PT. Until then, only work that gets a usable draft tool
-ready counts. Pickups, trades, backtesting, and the FastAPI backend come after the draft.
+**Leagues:** our homegrown league (Yahoo points, drafted Oct 1) stays tool-free. The app is for an
+experimental league whose draft is **Sunday, Oct 18, 2026**. Its exact settings don't matter; the
+app defaults to 10 teams, head-to-head 9-category, Yahoo default roster (13 + 2 IL), and everything
+is editable in the sidebar. Points scoring is also supported.
 
-## Current sprint (to Oct 1)
+## Current status
 
-- Engine: pull last season's stats with `nba_api`, compute Yahoo fantasy points per game and games
-  played, project this season, compute value over replacement for 10 teams, export a rankings CSV.
-- App: Streamlit draft board. Mark players drafted, track our roster, show best available filtered by
-  open roster slots. Stretch: one Claude API call to explain the top picks.
-- Fallback: the rankings CSV alone must work as a cheat sheet if the app isn't ready.
+See `HANDOFF.md` for what's built, what's untested, and the ordered task list. In short: engine,
+draft logic, and the Streamlit draft board work on fake data; the real NBA data pull and the Claude
+call haven't been run yet. Pickups, trades, backtesting, and FastAPI come after Sunday's draft.
 
 ## Repo layout
 
@@ -38,13 +37,22 @@ ready counts. Pickups, trades, backtesting, and the FastAPI backend come after t
 `app/` calls `engine/` only through these functions (details in `docs/design.md`). For the MVP,
 Streamlit imports them directly; after the draft a FastAPI backend will expose the same functions.
 
-- `get_player_values(league_settings)` — MVP
-- `recommend_pick(draft_state, roster, league_settings)` — MVP
-- `get_player_profile(player_id)` — MVP
+- `get_player_values(logs, settings, seasons, positions=None, overrides=None)` — built
+- `recommend_pick(values, draft_state, settings, top_n=10)` — built (roster comes from `DraftState`)
+- `get_player_profile(player_id)` — not built yet
 - `find_pickups(roster, free_agents, week)` — after draft
 - `evaluate_trade(players_out, players_in, roster)` — after draft
 
-Shared data objects: `LeagueSettings`, `Player`, `DraftState`, `Roster`.
+Shared data objects: `LeagueSettings` (`engine/settings.py`) and `DraftState` (`engine/draft.py`).
+Players are rows of the values DataFrame (columns include `PLAYER_ID`, `PLAYER_NAME`, `POSITIONS`,
+`GAMES`, `VALUE`, and `Z_<category>` or `FPPG`).
+
+## Commands
+
+- `pip install -r requirements.txt`
+- `python scripts/pull_data.py` (real data, run on a laptop) or `python scripts/make_sample_data.py`
+- `streamlit run app/streamlit_app.py`
+- `pytest`
 
 ## Rules
 

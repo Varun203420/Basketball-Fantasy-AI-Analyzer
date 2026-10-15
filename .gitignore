@@ -15,3 +15,9 @@ venv/
 # OS / editor
 .DS_Store
 .vscode/
+
+# Data (regenerate with scripts/pull_data.py or scripts/make_sample_data.py)
+data/*.csv
+data/sample/
+!data/overrides.example.csv
+.pytest_cache/

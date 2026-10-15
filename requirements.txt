@@ -1,0 +1,7 @@
+nba_api
+pandas
+numpy
+streamlit
+anthropic
+python-dotenv
+pytest
