@@ -97,3 +97,96 @@ def test_recommendations_exclude_drafted(sample):
     assert len(recs) == 5
     assert not recs["PLAYER_ID"].isin(taken).any()
     assert recs["REASONS"].str.len().gt(0).all()
+
+
+# ---------------------------------------------------------------- in-season features
+from datetime import date, timedelta  # noqa: E402
+
+from engine import recent_form, rising_players, team_games, week_bounds, weekly_games_table  # noqa: E402
+from make_sample_data import make_schedule  # noqa: E402
+
+
+def test_shrinkage_is_light_for_full_seasons(sample):
+    logs, positions = sample
+    v = get_player_values(logs, LeagueSettings(), SEASONS, positions=positions)
+    raw = logs[logs["SEASON"] == "2025-26"].groupby("PLAYER_ID")["PTS"].mean()
+    top = v.head(5).set_index("PLAYER_ID")
+    # A projection should stay close to what the player actually did, not be pulled to the middle.
+    for pid, row in top.iterrows():
+        assert abs(row["PTS"] - raw[pid]) / raw[pid] < 0.12
+
+
+def test_one_injury_season_does_not_sink_value(sample):
+    logs, positions = sample
+    full = get_player_values(logs, LeagueSettings(availability_weight=0.0), SEASONS, positions=positions)
+    assert list(full["PLAYER_ID"]) == list(full.sort_values("PER_GAME_VALUE", ascending=False)["PLAYER_ID"])
+    v = get_player_values(logs, LeagueSettings(), SEASONS, positions=positions)
+    assert v["GAMES"].min() >= 0.3 * 70   # regressed toward a normal season
+
+
+def test_week_bounds_and_schedule():
+    monday, sunday = week_bounds(date(2026, 10, 22))   # a Thursday
+    assert monday == date(2026, 10, 19) and sunday == date(2026, 10, 25)
+    sched = make_schedule()
+    sched["GAME_DATE"] = pd.to_datetime(sched["GAME_DATE"]).dt.date
+    counts = team_games(sched, date.today(), date.today() + timedelta(days=6))
+    assert counts.sum() == 2 * ((sched["GAME_DATE"] >= date.today())
+                                & (sched["GAME_DATE"] <= date.today() + timedelta(days=6))).sum()
+    table = weekly_games_table(sched, date.today(), weeks=3)
+    assert table.shape[1] == 3
+
+
+def test_rising_players(sample):
+    logs, positions = sample
+    s = LeagueSettings()
+    v = get_player_values(logs, s, SEASONS, positions=positions)
+    form = recent_form(logs, v, s, window_days=30)
+    assert {"VALUE_DELTA", "MIN_DELTA", "GP_RECENT"} <= set(form.columns)
+    r = rising_players(form, top_n=5, min_minutes=0)
+    assert r["VALUE_DELTA"].is_monotonic_decreasing
+
+
+def test_agent_loop_with_fake_claude(sample):
+    sys.path.insert(0, str(ROOT / "app"))
+    import agent
+    from fake_claude import FakeAnthropic
+    logs, positions = sample
+    s = LeagueSettings()
+    v = get_player_values(logs, s, SEASONS, positions=positions)
+    form = recent_form(logs, v, s, window_days=30)
+    sched = make_schedule()
+    sched["GAME_DATE"] = pd.to_datetime(sched["GAME_DATE"]).dt.date
+    ctx = agent.Context(values=v, settings=s, form=form, schedule=sched, today=date.today(),
+                        data_as_of=logs["GAME_DATE"].max().date(), my_ids=list(v["PLAYER_ID"][:3]))
+    msgs = agent.run(FakeAnthropic(), "fake-model", [{"role": "user", "content": "pickups?"}], ctx)
+    assert msgs[-1]["role"] == "assistant"
+    tool_results = msgs[2]["content"]
+    assert len(tool_results) == 2 and all(r["type"] == "tool_result" for r in tool_results)
+    assert "weakest_categories" in tool_results[0]["content"]
+    text, sources, activity = agent.render_parts(msgs[1]["content"])
+    assert any("Searched the web" in a for a in activity)
+    assert agent.render_parts(msgs[-1]["content"])[1] == [("Injury report", "https://example.com/injuries")]
+    # Tool specs include the server web search tool.
+    assert any(t.get("type") == "web_search_20250305" for t in agent.tool_specs())
+
+
+def test_every_tool_runs(sample):
+    sys.path.insert(0, str(ROOT / "app"))
+    import agent
+    logs, positions = sample
+    s = LeagueSettings()
+    v = get_player_values(logs, s, SEASONS, positions=positions)
+    sched = make_schedule()
+    sched["GAME_DATE"] = pd.to_datetime(sched["GAME_DATE"]).dt.date
+    ctx = agent.Context(values=v, settings=s, form=recent_form(logs, v, s, 30), schedule=sched,
+                        today=date.today(), data_as_of=date.today(), my_ids=list(v["PLAYER_ID"][:5]),
+                        draft=DraftState(10, 5, list(v["PLAYER_ID"][:4])))
+    name = v["PLAYER_NAME"].iloc[0]
+    calls = {"get_player": {"name": name.lower()}, "compare_players": {"names": [name, "nobody xyz"]},
+             "get_rankings": {"available_only": True, "position": "C"}, "get_my_team": {},
+             "get_rising_players": {}, "get_my_slumping_players": {}, "get_schedule": {"team": "LAL"},
+             "recommend_draft_pick": {}}
+    assert set(calls) == set(agent.TOOLS)
+    for tool, args in calls.items():
+        out = agent.call_tool(ctx, tool, args)
+        assert "error" not in out, (tool, out)

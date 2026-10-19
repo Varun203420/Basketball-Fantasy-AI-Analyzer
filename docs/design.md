@@ -170,3 +170,7 @@ The draft is Oct 1 at 8pm PT, eight days out, so the MVP is a one-week sprint. T
 | Engine supports categories and points; 9-cat is the default placeholder | The experiment league's format wasn't fixed; one setting switches formats |
 | Category values: per-game z-scores vs the draftable pool, FG%/FT% volume-weighted, value scaled by projected games | Standard approach; missing games costs value |
 | Recommendations add a weak-category bonus and a bench-only penalty on top of value | Keeps the pick deterministic while adapting to our roster |
+| Fix valuation: light shrinkage (8 games), games regressed 30% toward 70, adjustable injury-risk weight | Earlier version shrank stars ~20% and sank one-injury-season stars; rankings looked wrong on real data |
+| Chat assistant with tools + web search replaces the one-shot "explain" button | Users want to ask follow-ups; news needs search; numbers still come only from the engine |
+| Rising players measured against projection, not season-to-date | Works from the first week of the season |
+| Schedule from nba_api ScheduleLeagueV2; fantasy weeks run Monday-Sunday | Matches Yahoo head-to-head weeks |

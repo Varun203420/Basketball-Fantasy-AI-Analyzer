@@ -4,25 +4,24 @@ Shared context for anyone (human or Claude) working in this repo. Read this firs
 
 ## Project
 
-An AI assistant for fantasy basketball: draft help first, then waiver pickups and trade analysis.
-A deterministic stats engine does all the math. An LLM (Claude API) explains recommendations in
-plain language. The LLM never computes player values itself.
+An AI assistant for fantasy basketball: draft, waiver pickups, injuries, schedule, and trades.
+A deterministic stats engine does all the math. A Claude chat assistant (`app/agent.py`) calls engine
+functions as tools and uses web search for injury news. The LLM never computes player values itself.
 
-**Leagues:** our homegrown league (Yahoo points, drafted Oct 1) stays tool-free. The app is for an
-experimental league whose draft is **Sunday, Oct 18, 2026**. Its exact settings don't matter; the
-app defaults to 10 teams, head-to-head 9-category, Yahoo default roster (13 + 2 IL), and everything
-is editable in the sidebar. Points scoring is also supported.
+**Leagues:** our homegrown league (Yahoo points) stays tool-free. The app is for an experimental
+league (drafted Oct 18, 2026). Its exact settings don't matter; the app defaults to 10 teams,
+head-to-head 9-category, Yahoo default roster (13 + 2 IL), all editable in the sidebar. Points
+scoring is also supported.
 
 ## Current status
 
-See `HANDOFF.md` for what's built, what's untested, and the ordered task list. In short: engine,
-draft logic, and the Streamlit draft board work on fake data; the real NBA data pull and the Claude
-call haven't been run yet. Pickups, trades, backtesting, and FastAPI come after Sunday's draft.
+See `HANDOFF.md` for what's built, what's untested, how values work, and the ordered task list.
+Focus is in-season: the Assistant, My team, Trending, and Schedule tabs.
 
 ## Repo layout
 
-- `engine/` data pipeline, valuation, projections (later: backtests, pickups)
-- `app/` Streamlit UI and Claude API calls (later: FastAPI backend, pickup agent)
+- `engine/` data pull, valuation/projections, draft logic, trends (rising players), schedule
+- `app/streamlit_app.py` UI; `app/agent.py` chat assistant (tool definitions, system prompt, loop)
 - `docs/design.md` design doc, interface contract, milestones, decision log
 - `CLAUDE.md` this file
 
@@ -34,14 +33,19 @@ call haven't been run yet. Pickups, trades, backtesting, and FastAPI come after 
 
 ## Interface contract
 
-`app/` calls `engine/` only through these functions (details in `docs/design.md`). For the MVP,
-Streamlit imports them directly; after the draft a FastAPI backend will expose the same functions.
+`app/` calls `engine/` only through these functions (details in `docs/design.md`). Streamlit
+imports them directly; a FastAPI backend may expose the same functions later.
 
-- `get_player_values(logs, settings, seasons, positions=None, overrides=None)` — built
-- `recommend_pick(values, draft_state, settings, top_n=10)` — built (roster comes from `DraftState`)
-- `get_player_profile(player_id)` — not built yet
-- `find_pickups(roster, free_agents, week)` — after draft
-- `evaluate_trade(players_out, players_in, roster)` — after draft
+- `get_player_values(logs, settings, seasons=None, positions=None, overrides=None)` — built
+- `recommend_pick(values, draft_state, settings, top_n=10)` — built
+- `recent_form(logs, values, settings, window_days)`, `rising_players`, `falling_players` — built
+- `team_games(schedule, start, end)`, `weekly_games_table(schedule, today)` — built
+- `find_pickups(roster, free_agents, week)` — next (today the agent combines rising players,
+  rankings, schedule, and news itself)
+- `evaluate_trade(players_out, players_in, roster)` — later
+
+To give the assistant a new capability, add an engine function, then a tool in `app/agent.py`
+(`TOOLS` dict) and a case in `tests/test_engine.py::test_every_tool_runs`.
 
 Shared data objects: `LeagueSettings` (`engine/settings.py`) and `DraftState` (`engine/draft.py`).
 Players are rows of the values DataFrame (columns include `PLAYER_ID`, `PLAYER_NAME`, `POSITIONS`,
@@ -50,7 +54,9 @@ Players are rows of the values DataFrame (columns include `PLAYER_ID`, `PLAYER_N
 ## Commands
 
 - `pip install -r requirements.txt`
-- `python scripts/pull_data.py` (real data, run on a laptop) or `python scripts/make_sample_data.py`
+- `python scripts/pull_data.py` (full pull, run on a laptop; NBA.com blocks cloud servers)
+- `python scripts/pull_data.py --daily` (current season games + schedule)
+- `python scripts/make_sample_data.py` (fake data for testing)
 - `streamlit run app/streamlit_app.py`
 - `pytest`
 
@@ -59,12 +65,14 @@ Players are rows of the values DataFrame (columns include `PLAYER_ID`, `PLAYER_N
 - Don't change a contract function's signature or return shape without updating `docs/design.md` in
   the same pull request, and flag it in the PR title.
 - `app/` may use mock engine functions returning the same shapes until the real engine is ready.
-- The draft pick is deterministic: the engine ranks, the LLM only explains.
-- Single agent with tools, not multi-agent (for post-draft agent features).
+- The engine ranks and computes; the assistant only reasons over tool results and news. Never let
+  the LLM produce stats from memory.
+- Single agent with tools, not multi-agent.
+- Tests must not call the real Claude API; use `tests/fake_claude.py`.
 - New decisions go in the decision log in `docs/design.md` with a one-line reason.
 - Work on branches; merge through pull requests.
 
 ## Conventions
 
 - Python for everything in the MVP.
-- Secrets (Anthropic API key, later Yahoo OAuth credentials) go in `.env`, never committed.
+- Secrets (`ANTHROPIC_API_KEY`, optional `ANTHROPIC_MODEL`, later Yahoo OAuth) go in `.env`, never committed.

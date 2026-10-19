@@ -6,6 +6,7 @@ Lets the app and tests run without NBA.com access. Players are fictional
     python scripts/make_sample_data.py
 """
 import sys
+from datetime import date
 from pathlib import Path
 
 import numpy as np
@@ -13,7 +14,7 @@ import pandas as pd
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "data" / "sample"
-SEASONS = ["2025-26", "2024-25"]
+SEASONS = ["2026-27", "2025-26", "2024-25"]   # first = current season (partial)
 TEAMS = ["ATL", "BOS", "BKN", "CHA", "CHI", "CLE", "DAL", "DEN", "DET", "GSW", "HOU", "IND", "LAC", "LAL", "MEM",
          "MIA", "MIL", "MIN", "NOP", "NYK", "OKC", "ORL", "PHI", "PHX", "POR", "SAC", "SAS", "TOR", "UTA", "WAS"]
 POSITIONS = ["G", "G", "G-F", "F", "F", "F-C", "C", "C-F", "F-G"]
@@ -41,7 +42,13 @@ def make(n_players: int = 260, seed: int = 7) -> tuple[pd.DataFrame, pd.DataFram
         injury_prone = rng.random() < 0.2
         for s_idx, season in enumerate(SEASONS):
             mpg = float(np.clip(14 + 20 * min(skill, 1.6) / 1.6 + rng.normal(0, 3), 8, 37))
-            gp = int(rng.integers(30, 62) if injury_prone else rng.integers(62, 82))
+            if s_idx == 0:   # current season: a few recent games; some players' roles change
+                mpg = float(np.clip(mpg + rng.normal(0, 5), 5, 38))
+                gp = int(rng.integers(3, 8))
+                start = pd.Timestamp(date.today()) - pd.Timedelta(days=2 * gp)
+            else:
+                gp = int(rng.integers(30, 62) if injury_prone else rng.integers(62, 82))
+                start = pd.Timestamp(f"{season[:4]}-10-22")
             for g in range(gp):
                 mins = max(0.0, rng.normal(mpg, 4))
                 scale = mins / 36
@@ -53,10 +60,24 @@ def make(n_players: int = 260, seed: int = 7) -> tuple[pd.DataFrame, pd.DataFram
                 rows.append({
                     "SEASON_ID": "2" + season[:4], "PLAYER_ID": pid, "PLAYER_NAME": name,
                     "TEAM_ABBREVIATION": team, "GAME_ID": f"{s_idx}{g:05d}",
-                    "GAME_DATE": (pd.Timestamp(f"{season[:4]}-10-22") + pd.Timedelta(days=2 * g)).date().isoformat(),
+                    "GAME_DATE": (start + pd.Timedelta(days=2 * g)).date().isoformat(),
                     "MIN": round(mins, 1), "FGM": fgm, "FGA": fga, "FTM": ftm, "FTA": fta, **line, "SEASON": season,
                 })
     return pd.DataFrame(rows), pd.DataFrame(pos_rows)
+
+
+def make_schedule(seed: int = 3, days_back: int = 14, days_ahead: int = 60) -> pd.DataFrame:
+    """Fake schedule around today: each team plays roughly every other day."""
+    rng = np.random.default_rng(seed)
+    rows, gid = [], 0
+    for d in range(-days_back, days_ahead):
+        day = date.today() + pd.Timedelta(days=d).to_pytimedelta()
+        teams = list(rng.permutation(TEAMS))[: int(rng.choice([8, 12, 16, 20]))]
+        for i in range(0, len(teams), 2):
+            gid += 1
+            rows.append({"GAME_ID": f"0022600{gid:03d}", "GAME_DATE": day.isoformat(),
+                         "HOME": teams[i], "AWAY": teams[i + 1], "LABEL": ""})
+    return pd.DataFrame(rows)
 
 
 if __name__ == "__main__":
@@ -65,5 +86,6 @@ if __name__ == "__main__":
     for season in SEASONS:
         logs[logs["SEASON"] == season].to_csv(OUT / f"game_logs_{season}.csv", index=False)
     positions.to_csv(OUT / "positions.csv", index=False)
+    make_schedule().to_csv(OUT / f"schedule_{SEASONS[0]}.csv", index=False)
     print(f"Wrote {len(logs):,} sample game rows to {OUT}")
     sys.exit(0)

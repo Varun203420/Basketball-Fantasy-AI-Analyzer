@@ -26,6 +26,13 @@ SLOT_ELIGIBILITY = {
 }
 
 
+# Seasons the engine uses. CURRENT_SEASON may have few or no games yet; it feeds
+# per-game projections (weighted by games played) and recent-form trends.
+CURRENT_SEASON = "2026-27"
+PAST_SEASONS = ["2025-26", "2024-25"]          # completed seasons, most recent first
+ALL_SEASONS = [CURRENT_SEASON] + PAST_SEASONS
+
+
 def cat_label(cat: str) -> str:
     return CAT_LABELS.get(cat, cat)
 
@@ -38,6 +45,9 @@ class LeagueSettings:
     punt: list = field(default_factory=list)  # categories to ignore
     point_values: dict = field(default_factory=lambda: dict(YAHOO_DEFAULT_POINTS))
     roster_slots: dict = field(default_factory=lambda: dict(YAHOO_DEFAULT_SLOTS))
+    # How much projected missed games reduce value: 0 = rank purely per game,
+    # 1 = scale fully by projected games / 82.
+    availability_weight: float = 0.5
 
     @property
     def active_categories(self) -> list:

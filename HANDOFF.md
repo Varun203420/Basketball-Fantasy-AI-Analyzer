@@ -1,48 +1,50 @@
 # Handoff: where the project stands
 
-Last updated: Oct 15, 2026. Read `CLAUDE.md` first, then this.
+Last updated: Oct 19, 2026. Read `CLAUDE.md` first, then this.
 
-## Goal right now
+## Where we are
 
-Use the app in our experimental league's draft on **Sunday, Oct 18**. Our homegrown league stays tool-free. The experiment league's exact settings don't matter much; the app defaults to a 10-team, 9-category league and everything is changeable in the sidebar.
+The experiment league drafted Oct 18 (without the app). Focus is now **in-season decisions**: pickups, injuries, schedule, trends. The 2026-27 season starts this week.
 
 ## What's built
 
 | Piece | File | Status |
 | --- | --- | --- |
-| League settings (9-cat or points, punts, Yahoo roster) | `engine/settings.py` | Done, tested |
-| NBA data pull via `nba_api` | `engine/data.py`, `scripts/pull_data.py` | Written, **not yet run against NBA.com** |
-| Fake data for testing | `scripts/make_sample_data.py` | Done |
-| Projections + values (z-scores, points) | `engine/valuation.py` | Done, tested on fake data |
-| Snake draft logic + recommendations | `engine/draft.py` | Done, tested |
-| Streamlit draft board | `app/streamlit_app.py` | Done, clicked through a full draft headlessly |
-| Claude explanation | `app/llm.py` | Written, **not yet called with a real key** |
+| League settings (9-cat or points, punts, roster, injury-risk weight) | `engine/settings.py` | Done |
+| Data pull: game logs (3 seasons), schedule, positions | `engine/data.py`, `scripts/pull_data.py` | Game logs + positions verified on Varun's laptop; **schedule pull not yet run** |
+| Projections + values | `engine/valuation.py` | Done; checked against real 2024-26 data |
+| Rising / falling players | `engine/trends.py` | Done; checked on real data |
+| Schedule (games per team per week) | `engine/schedule.py` | Done on sample data |
+| Draft board + recommendations | `engine/draft.py`, Draft tab | Done |
+| Chat assistant (tools + web search) | `app/agent.py`, Assistant tab | Tested with a fake Claude; **not yet run with a real key** |
+| Streamlit app (6 tabs) | `app/streamlit_app.py` | Clicked through on sample and real data |
 
 ## How values work
 
-1. **Projection.** Per-game stats are a blend of the last two seasons (70/30 by games played), shrunk toward a typical rotation player when the sample is small. Projected games blend the last two seasons' games played.
-2. **Categories.** Per-game z-score in each category against the draftable pool (top 130 players). FG% and FT% are volume-weighted; turnovers count negatively; punted categories are skipped.
-3. **Value.** (per-game value − replacement level) × projected games / 82.
-4. **Recommendation.** Value, plus a bonus for our weakest categories once we have 3+ players, minus a penalty if the player can only fill a bench spot while starting slots are open.
+1. **Projection.** Per-game stats blend the current season and the last two (weights 1.0 / 0.6 / 0.3, each multiplied by games played, so a few early-season games barely move it). Light shrinkage toward a typical rotation player (8 games' worth), which only matters for small samples.
+2. **Games.** From the last two completed seasons (60/40), regressed 30% toward 70 games so one injury year doesn't sink a star.
+3. **Categories.** Per-game z-score per category against the draftable pool. FG%/FT% volume-weighted, turnovers negative, punts skipped. Points leagues use fantasy points per game.
+4. **Value.** (per-game value − replacement level) × (1 − w + w × games/82), where w is the injury-risk weight (default 0.5).
+5. **Trends.** Each recent game is valued on the same scale; recent average minus projection = rising/falling.
 
-## Before Sunday (in order)
+Oct 19 fix: an earlier version shrank everyone ~20% toward average and over-penalized one injury season (Giannis ranked 67th). Fixed; on real data the top is Jokić, SGA, Wembanyama, Maxey, Kawhi, Luka. Giannis is 54th in 9-cat because of FT% (5th with FT% punted), which matches how 9-cat sites rank him.
 
-1. **Run the real data pull** on a laptop: `python scripts/pull_data.py`. If NBA.com times out, wait and retry; it rate-limits. Confirm `data/game_logs_2025-26.csv`, `data/game_logs_2024-25.csv`, and `data/positions.csv` exist.
-2. **Sanity-check the top 150** in the app's "All rankings" panel. Look for players who changed teams, are injured, or are out for the season.
-3. **Fix positions** for the top ~150 in `data/overrides.csv` (copy the example file). NBA.com positions are mapped roughly (G → PG,SG; F → SF,PF), and Yahoo eligibility often differs.
-4. **Add the Claude key** to `.env` and click "Ask Claude to explain" once to confirm it works.
-5. **Do a Yahoo mock draft** with the app open alongside it.
+## The assistant
+
+`app/agent.py` gives Claude these tools: `get_player`, `compare_players`, `get_rankings`, `get_my_team`, `get_rising_players`, `get_my_slumping_players`, `get_schedule`, `recommend_draft_pick`, plus Anthropic's server-side `web_search` for injury news. The system prompt forbids inventing numbers. Default model `claude-sonnet-5-5` (override with `ANTHROPIC_MODEL` in `.env`). History is trimmed to the last 6 turns to bound cost.
+
+## Next steps
+
+1. **Run `python scripts/pull_data.py --daily`** to get the 2026-27 schedule (and games once the season starts). Rerun daily.
+2. **Try the assistant with a real key**: enter the roster in My team, then ask the quick-prompt questions. Note bad answers in `docs/assistant-notes.md`.
+3. **Yahoo sync** (Varun): roster, free agents, and league settings from the Yahoo Fantasy API, replacing manual roster entry. Biggest usability gain.
+4. **Backtest the weights** (Mahir): project 2025-26 from 2024-25 and 2023-24 and compare with actual results; tune `SEASON_WEIGHTS`, `GAMES_REGRESSION`, `SHRINK_GAMES`. Also test whether minutes trends predict future value.
+5. **Teammate dependency** (Mahir): with/without splits for key teammates, feeding the injury-return logic in pickups.
+6. **Weekly matchup planner**: compare our projected category totals against this week's opponent, using games left.
 
 ## Known limitations
 
-- **Rookies and players with no NBA stats are missing.** Overrides can only edit existing players. If a rookie matters, adding him is a small change to `apply_overrides` in `engine/valuation.py`.
-- **"Likely gone" uses our own rankings** as a stand-in for other managers. Yahoo ADP would be better.
-- **Weights are guesses**: `SEASON_WEIGHTS`, `GAMES_WEIGHTS`, `SHRINK_GAMES` in `valuation.py`, and `NEED_BONUS`, `POSITION_PENALTY` in `draft.py`.
-- The app calls the engine directly; there's no FastAPI backend yet (planned after the draft).
-
-## After the draft (Mahir's modeling work)
-
-1. **Backtest the weights.** Project 2024-25 from 2023-24 and 2022-23, compare against what actually happened, and tune the weights in `valuation.py`. This is the most important modeling task.
-2. **Pickups.** Build `find_pickups` per the "Pickup analyzer design" section in `docs/design.md`: recent form, minutes trend, schedule, availability history, roster fit.
-3. **Teammate dependency.** From game logs, compare a player's minutes and production with vs without a key teammate. Feeds the injury-return logic in pickups.
-4. Then Varun adds the Claude agent with web search for injury news on top of `find_pickups`.
+- Rookies with no NBA games are missing from rankings.
+- "Available" means not on our roster and not marked as taken in the app; until Yahoo sync, the assistant asks the user to confirm.
+- Positions are a rough mapping from NBA.com (G → PG,SG); fix key players in `data/overrides.csv`.
+- Trends use the latest games in the data; until 2026-27 games are pulled, they reflect last April.
